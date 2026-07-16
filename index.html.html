@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Diyet Motivasyon Uygulaması - Önizleme</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #050506;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const COLORS = {
+  bg: "#0A0A0B",
+  surface: "#17171A",
+  surfaceElevated: "#202024",
+  border: "#2A2A2E",
+  accent: "#C9FF3B",
+  accentMuted: "rgba(201,255,59,0.12)",
+  danger: "#FF5C5C",
+  dangerMuted: "rgba(255,92,92,0.10)",
+  textPrimary: "#F5F5F7",
+  textSecondary: "#9A9AA2",
+  textTertiary: "#5C5C62",
+  gold: "#E8C97A",
+};
+
+const initialMeasurements = [
+  { date: "15 Haz", weight: 88.5, bodyFat: 26.4 },
+  { date: "22 Haz", weight: 87.1, bodyFat: 25.7 },
+  { date: "29 Haz", weight: 86.0, bodyFat: 25.1 },
+  { date: "6 Tem", weight: 85.0, bodyFat: 24.6 },
+  { date: "14 Tem", weight: 84.2, bodyFat: 24.1 },
+];
+const START_WEIGHT = 92;
+const TARGET_WEIGHT = 75;
+
+const initialTasks = [
+  { id: 1, title: "10.000 adım tamamla", xp: 20, done: false, icon: "🚶" },
+  { id: 2, title: "Bugünkü kilonu gir", xp: 10, done: false, icon: "📈" },
+  { id: 3, title: "2L su iç", xp: 15, done: true, icon: "💧" },
+  { id: 4, title: "Akşam check-in yap", xp: 25, done: false, icon: "✅" },
+];
+
+// --- ABD Donanması yağ oranı formülü (kumpas gerektirmez) ---
+function calcBodyFat({ gender, heightCm, neckCm, waistCm, hipCm }) {
+  const h = parseFloat(heightCm), n = parseFloat(neckCm), w = parseFloat(waistCm), hip = parseFloat(hipCm);
+  if (!h || !n || !w) return null;
+  if (gender === "erkek") {
+    if (w <= n) return null;
+    const bf = 495 / (1.0324 - 0.19077 * Math.log10(w - n) + 0.15456 * Math.log10(h)) - 450;
+    return bf > 0 && bf < 60 ? Math.round(bf * 10) / 10 : null;
+  } else {
+    if (!hip || w + hip <= n) return null;
+    const bf = 495 / (1.29579 - 0.35004 * Math.log10(w + hip - n) + 0.221 * Math.log10(h)) - 450;
+    return bf > 0 && bf < 60 ? Math.round(bf * 10) / 10 : null;
+  }
+}
+
+function xpRequiredForLevel(level) {
+  return Math.round(100 * Math.pow(1.5, level - 1));
+}
+function getLevelInfo(totalXp) {
+  let level = 1;
+  let remaining = totalXp;
+  let req = xpRequiredForLevel(level);
+  while (remaining >= req) {
+    remaining -= req;
+    level++;
+    req = xpRequiredForLevel(level);
+  }
+  return { level, currentInLevel: remaining, needed: req, totalXp };
+}
+
+function getBadges({ streak, survivedCravings, level, currentWeight }) {
+  const weightProgress = Math.min(Math.max((START_WEIGHT - currentWeight) / (START_WEIGHT - TARGET_WEIGHT), 0), 1);
+  return [
+    { id: "b1", title: "İlk Adım", desc: "7 günlük seri", icon: "🔥", unlocked: streak >= 7, progress: Math.min(streak / 7, 1), progressLabel: `${Math.min(streak, 7)}/7 gün` },
+    { id: "b2", title: "Fırtınayı Atlattın", desc: "5 krizi yönet", icon: "🛡️", unlocked: survivedCravings >= 5, progress: Math.min(survivedCravings / 5, 1), progressLabel: `${Math.min(survivedCravings, 5)}/5 kriz` },
+    { id: "b3", title: "Demir İrade", desc: "30 günlük seri", icon: "⚔️", unlocked: streak >= 30, progress: Math.min(streak / 30, 1), progressLabel: `${Math.min(streak, 30)}/30 gün` },
+    { id: "b4", title: "Yarı Yol", desc: "Hedefin yarısı", icon: "🎯", unlocked: weightProgress >= 0.5, progress: Math.min(weightProgress / 0.5, 1), progressLabel: `%${Math.round(weightProgress * 100)}` },
+    { id: "b5", title: "Yükselen Yıldız", desc: "Seviye 5'e ulaş", icon: "⭐", unlocked: level >= 5, progress: Math.min(level / 5, 1), progressLabel: `Lv${level}/5` },
+  ];
+}
+
+function ProgressBar({ value, height = 6, color = COLORS.accent, bg = COLORS.border }) {
+  return (
+    <div style={{ height, borderRadius: 999, background: bg, overflow: "hidden", width: "100%" }}>
+      <div style={{ height: "100%", width: `${Math.round(value * 100)}%`, background: color, transition: "width 0.4s ease" }} />
+    </div>
+  );
+}
+
+function MiniLineChart({ data, height = 70, showAxis = false, dataKey = "weight", color = COLORS.accent }) {
+  const values = data.map((d) => d[dataKey]).filter((v) => v != null);
+  if (values.length < 2) return <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ color: COLORS.textTertiary, fontSize: 11 }}>Yeterli veri yok</span></div>;
+  const min = Math.min(...values) - 0.5;
+  const max = Math.max(...values) + 0.5;
+  const w = 300, h = height;
+  const pts = data.filter((d) => d[dataKey] != null);
+  const points = pts.map((d, i) => {
+    const x = (i / (pts.length - 1)) * w;
+    const y = h - ((d[dataKey] - min) / (max - min)) * h;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height, display: "block" }}>
+      <polyline points={points} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      {showAxis && pts.map((d, i) => {
+        const x = (i / (pts.length - 1)) * w;
+        return <text key={i} x={x} y={h + 14} fontSize="9" fill={COLORS.textTertiary} textAnchor="middle">{d.date}</text>;
+      })}
+    </svg>
+  );
+}
+
+function StreakCalendar({ streak }) {
+  const days = Array.from({ length: 14 }, (_, i) => i);
+  return (
+    <div style={{ display: "flex", gap: 5, marginTop: 8 }}>
+      {days.map((i) => {
+        const filled = i >= 14 - Math.min(streak, 14);
+        return <div key={i} style={{ flex: 1, height: 22, borderRadius: 6, background: filled ? COLORS.accent : COLORS.surface, border: `1px solid ${filled ? COLORS.accent : COLORS.border}` }} />;
+      })}
+    </div>
+  );
+}
+
+function PhoneFrame({ children }) {
+  return (
+    <div style={{ width: 360, height: 720, background: COLORS.bg, borderRadius: 40, border: "8px solid #050506", overflow: "hidden", position: "relative", boxShadow: "0 0 0 1px #000", fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
+      {children}
+    </div>
+  );
+}
+
+function StatusBar() {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 20px 4px", fontSize: 12, color: COLORS.textSecondary }}>
+      <span>9:41</span>
+      <span>●●●● 5G 🔋</span>
+    </div>
+  );
+}
+
+function StatusHeader({ streak, levelInfo }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 18, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+          <span style={{ fontSize: 20 }}>🔥</span>
+          <div>
+            <div style={{ color: COLORS.textPrimary, fontWeight: 700, fontSize: 15 }}>{streak}</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 11 }}>gün seri</div>
+          </div>
+        </div>
+        <div style={{ width: 1, height: 30, background: COLORS.border }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+          <div style={{ background: COLORS.accentMuted, borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 800, color: COLORS.accent }}>Lv{levelInfo.level}</div>
+          <div>
+            <div style={{ color: COLORS.textPrimary, fontWeight: 700, fontSize: 15 }}>{levelInfo.totalXp} XP</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 11 }}>seviye {levelInfo.level}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <ProgressBar value={levelInfo.currentInLevel / levelInfo.needed} />
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+          <span style={{ color: COLORS.textTertiary, fontSize: 10 }}>{levelInfo.currentInLevel}/{levelInfo.needed} XP</span>
+          <span style={{ color: COLORS.textTertiary, fontSize: 10 }}>Lv{levelInfo.level + 1}'e {levelInfo.needed - levelInfo.currentInLevel} XP</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabBar({ active, onChange }) {
+  const tabs = [
+    { id: "home", label: "Bugün", icon: "🏠" },
+    { id: "progress", label: "İlerleme", icon: "📊" },
+    { id: "coach", label: "Koç", icon: "💬" },
+  ];
+  return (
+    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: COLORS.surface, borderTop: `1px solid ${COLORS.border}`, paddingBottom: 10, paddingTop: 8 }}>
+      {tabs.map((t) => {
+        const isActive = active === t.id;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)} style={{ flex: 1, background: "transparent", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer" }}>
+            <span style={{ fontSize: 16, opacity: isActive ? 1 : 0.5 }}>{t.icon}</span>
+            <span style={{ fontSize: 10, color: isActive ? COLORS.accent : COLORS.textTertiary, fontWeight: isActive ? 700 : 500 }}>{t.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Toast({ toast }) {
+  if (!toast) return null;
+  return (
+    <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", background: COLORS.surfaceElevated, border: `1px solid ${COLORS.accent}`, borderRadius: 14, padding: "10px 16px", zIndex: 40, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 18 }}>{toast.icon}</span>
+      <div>
+        <div style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: 800 }}>{toast.title}</div>
+        {toast.sub && <div style={{ color: COLORS.textSecondary, fontSize: 10 }}>{toast.sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheckIn, onProgress, onOpenMeasurement }) {
+  const kgLeft = 84.2 - 75;
+  return (
+    <div style={{ padding: "6px 16px 90px", overflowY: "auto", height: "100%" }}>
+      <h1 style={{ color: COLORS.textPrimary, fontSize: 26, fontWeight: 800, margin: "6px 0 14px" }}>Bugün</h1>
+      <StatusHeader streak={streak} levelInfo={levelInfo} />
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, background: COLORS.surface, borderRadius: 16, padding: 14, border: `1px solid ${COLORS.border}` }}>
+        <div>
+          <div style={{ color: COLORS.textSecondary, fontSize: 11 }}>Hedefe kalan</div>
+          <div style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 700 }}>{kgLeft.toFixed(1)} kg · 79 gün</div>
+        </div>
+        <div style={{ background: COLORS.accentMuted, borderRadius: 999, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: COLORS.accent }}>↓ 4.3 kg</div>
+      </div>
+
+      <button onClick={onProgress} style={{ width: "100%", textAlign: "left", marginTop: 12, background: COLORS.surface, borderRadius: 16, padding: 14, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
+        <div style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>Kilo trendi</div>
+        <MiniLineChart data={initialMeasurements} height={60} />
+        <div style={{ color: COLORS.accent, fontSize: 12, fontWeight: 700, marginTop: 6 }}>Detayları gör →</div>
+      </button>
+
+      <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Bugünün görevleri</h2>
+      {tasks.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => (t.id === 2 && !t.done ? onOpenMeasurement() : toggleTask(t.id))}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12, marginBottom: 8, opacity: t.done ? 0.5 : 1, cursor: "pointer", textAlign: "left" }}
+        >
+          <div style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${t.done ? COLORS.accent : COLORS.textTertiary}`, background: t.done ? COLORS.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {t.done && <span style={{ color: COLORS.bg, fontWeight: 900, fontSize: 13 }}>✓</span>}
+          </div>
+          <span style={{ fontSize: 15 }}>{t.icon}</span>
+          <span style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</span>
+          <span style={{ color: COLORS.accent, fontSize: 11, fontWeight: 700 }}>+{t.xp}</span>
+        </button>
+      ))}
+
+      <button onClick={onCheckIn} style={{ width: "100%", textAlign: "left", marginTop: 8, background: COLORS.accentMuted, borderRadius: 16, padding: 16, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
+        <div style={{ color: COLORS.textPrimary, fontSize: 14, fontWeight: 700 }}>Günlük check-in</div>
+        <div style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 2 }}>30 saniyeni ayır, +25 XP kazan</div>
+      </button>
+
+      <button onClick={onEmergency} style={{ position: "fixed", bottom: 76, left: "50%", transform: "translateX(-50%)", background: COLORS.danger, border: "none", borderRadius: 999, padding: "12px 22px", color: "#1A0000", fontWeight: 800, fontSize: 12, lineHeight: 1.2, textAlign: "center", cursor: "pointer", boxShadow: "0 8px 20px rgba(255,92,92,0.35)", whiteSpace: "pre" }}>
+        {"Canım çok\nçekiyor"}
+      </button>
+    </div>
+  );
+}
+
+function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasurement }) {
+  const latest = measurements[measurements.length - 1];
+  const hasFatData = measurements.some((m) => m.bodyFat != null);
+  return (
+    <div style={{ padding: "6px 16px 90px", overflowY: "auto", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 14px" }}>
+        <button onClick={onBack} style={{ background: "transparent", border: "none", color: COLORS.textSecondary, cursor: "pointer", fontSize: 18 }}>‹</button>
+        <h1 style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 800, margin: 0, flex: 1 }}>İlerleme</h1>
+        <button onClick={onOpenMeasurement} style={{ background: COLORS.accentMuted, border: `1px solid ${COLORS.accent}`, borderRadius: 999, padding: "6px 12px", color: COLORS.accent, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+          + Ölçü Ekle
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12 }}>
+          <div style={{ color: COLORS.textSecondary, fontSize: 10 }}>Güncel kilo</div>
+          <div style={{ color: COLORS.textPrimary, fontSize: 20, fontWeight: 800 }}>{latest.weight} kg</div>
+        </div>
+        <div style={{ flex: 1, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12 }}>
+          <div style={{ color: COLORS.textSecondary, fontSize: 10 }}>Yağ oranı</div>
+          <div style={{ color: COLORS.textPrimary, fontSize: 20, fontWeight: 800 }}>{latest.bodyFat != null ? `%${latest.bodyFat}` : "—"}</div>
+        </div>
+      </div>
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 12, marginTop: 12 }}>
+        <div style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>Kilo trendi</div>
+        <MiniLineChart data={measurements} height={130} showAxis dataKey="weight" />
+      </div>
+
+      {hasFatData && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 12, marginTop: 12 }}>
+          <div style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>Yağ oranı trendi</div>
+          <MiniLineChart data={measurements} height={110} showAxis dataKey="bodyFat" color={COLORS.gold} />
+        </div>
+      )}
+
+      <div style={{ marginTop: 20 }}>
+        <div style={{ color: COLORS.textPrimary, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Son 14 gün</div>
+        <StreakCalendar streak={streak} />
+      </div>
+
+      <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Rozetler</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {badges.map((b) => (
+          <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 12, background: COLORS.surface, border: `1px solid ${b.unlocked ? COLORS.accent : COLORS.border}`, borderRadius: 14, padding: 12, opacity: b.unlocked ? 1 : 0.85 }}>
+            <div style={{ fontSize: 24, width: 32, textAlign: "center", filter: b.unlocked ? "none" : "grayscale(1)", opacity: b.unlocked ? 1 : 0.4 }}>{b.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: 700 }}>{b.title}</span>
+                <span style={{ color: b.unlocked ? COLORS.accent : COLORS.textTertiary, fontSize: 10, fontWeight: 700 }}>{b.unlocked ? "Açıldı" : b.progressLabel}</span>
+              </div>
+              <div style={{ color: COLORS.textSecondary, fontSize: 10, marginBottom: 6 }}>{b.desc}</div>
+              {!b.unlocked && <ProgressBar value={b.progress} height={4} />}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CoachScreen({ messages, setMessages }) {
+  const [input, setInput] = useState("");
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const send = () => {
+    if (!input.trim()) return;
+    setMessages((m) => [
+      ...m,
+      { from: "user", text: input },
+      { from: "coach", text: "Bunu paylaştığın için teşekkürler. Geçmişte de benzer anları atlattın — bu sefer de yapabilirsin. Küçük bir adım: bir bardak su iç ve 5 dakika bekle." },
+    ]);
+    setInput("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "6px 16px 8px" }}>
+        <h1 style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 800, margin: "6px 0" }}>Koçun</h1>
+      </div>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "0 16px" }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ maxWidth: "78%", marginLeft: m.from === "user" ? "auto" : 0, background: m.from === "user" ? COLORS.accentMuted : COLORS.surface, border: m.from === "coach" ? `1px solid ${COLORS.border}` : "none", borderRadius: 14, padding: 12, marginBottom: 8 }}>
+            <span style={{ color: COLORS.textPrimary, fontSize: 13, lineHeight: 1.4 }}>{m.text}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${COLORS.border}`, marginBottom: 60 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Bir şeyler yaz..." style={{ flex: 1, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "8px 14px", color: COLORS.textPrimary, fontSize: 13, outline: "none" }} />
+        <button onClick={send} style={{ background: COLORS.accent, border: "none", borderRadius: 999, padding: "8px 16px", color: COLORS.bg, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Gönder</button>
+      </div>
+    </div>
+  );
+}
+
+function BreatheCircle({ secondsLeft }) {
+  const cyclePos = (120 - secondsLeft) % 8;
+  const scale = cyclePos < 4 ? 1 + (cyclePos / 4) * 0.4 : 1.4 - ((cyclePos - 4) / 4) * 0.4;
+  return (
+    <div style={{ display: "flex", justifyContent: "center", margin: "10px 0 18px" }}>
+      <div style={{ width: 90, height: 90, borderRadius: "50%", background: COLORS.accentMuted, border: `2px solid ${COLORS.accent}`, transform: `scale(${scale})`, transition: "transform 1s linear", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: COLORS.accent, fontWeight: 800, fontSize: 15 }}>{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}</span>
+      </div>
+    </div>
+  );
+}
+
+const optionStyle = { width: "100%", textAlign: "left", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 13, marginBottom: 8, cursor: "pointer" };
+const optionTitle = { color: COLORS.textPrimary, fontSize: 13, fontWeight: 700 };
+const optionSub = { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 };
+const inputStyle = { width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 12px", color: COLORS.textPrimary, fontSize: 14, outline: "none", marginTop: 4 };
+const fieldLabel = { color: COLORS.textSecondary, fontSize: 11, marginTop: 10, display: "block" };
+
+function EmergencyModal({ onClose, onTruth, onSurvive, onTalkToCoach }) {
+  const [mode, setMode] = useState("choice");
+  const [secondsLeft, setSecondsLeft] = useState(120);
+
+  useEffect(() => {
+    if (mode !== "breathing") return;
+    if (secondsLeft <= 0) {
+      setMode("resolved");
+      return;
+    }
+    const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [mode, secondsLeft]);
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+      <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", padding: 24, border: `1px solid ${COLORS.border}`, position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: -44, right: 0, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "6px 10px", cursor: "pointer", color: COLORS.textSecondary }}>✕</button>
+
+        {mode === "choice" && (
+          <React.Fragment>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 19, fontWeight: 800, textAlign: "center", margin: "4px 0 4px" }}>Şu an buradasın, bu geçici.</h2>
+            <p style={{ color: COLORS.textSecondary, fontSize: 12, textAlign: "center", margin: "0 0 18px" }}>Ne yapmak istersin?</p>
+            <button onClick={() => setMode("breathing")} style={optionStyle}>
+              <div style={optionTitle}>2 dakika bekle</div>
+              <div style={optionSub}>Nefes egzersiziyle isteğin geçmesini izle</div>
+            </button>
+            <button onClick={onTruth} style={optionStyle}>
+              <div style={optionTitle}>Acı gerçeği gör</div>
+              <div style={optionSub}>Bu atıştırmanın karşılığı ne, hesapla</div>
+            </button>
+            <button onClick={onTalkToCoach} style={optionStyle}>
+              <div style={optionTitle}>Koçumla konuş</div>
+              <div style={optionSub}>Anlık, bu ana özel bir destek mesajı al</div>
+            </button>
+          </React.Fragment>
+        )}
+
+        {mode === "breathing" && (
+          <React.Fragment>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 16, fontWeight: 800, textAlign: "center", margin: "4px 0 4px" }}>Nefes al, ver...</h2>
+            <p style={{ color: COLORS.textSecondary, fontSize: 11, textAlign: "center", margin: "0 0 4px" }}>Daire büyürken al, küçülürken ver</p>
+            <BreatheCircle secondsLeft={secondsLeft} />
+            <button onClick={() => setMode("resolved")} style={{ ...optionStyle, textAlign: "center", marginBottom: 0 }}>
+              <div style={{ color: COLORS.textSecondary, fontSize: 12 }}>Zaten iyiyim, geç</div>
+            </button>
+          </React.Fragment>
+        )}
+
+        {mode === "resolved" && (
+          <div style={{ textAlign: "center", padding: "10px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>💪</div>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 19, fontWeight: 800, margin: "0 0 6px" }}>Bunu atlattın</h2>
+            <p style={{ color: COLORS.textSecondary, fontSize: 12, margin: "0 0 18px" }}>+30 XP kazandın. Bu an, diyetteki en güçlü anlarından biriydi.</p>
+            <button onClick={() => { onSurvive(); onClose(); }} style={{ width: "100%", background: COLORS.accent, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Devam et</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TruthModal({ onClose, onResisted }) {
+  const [kcal, setKcal] = useState(350);
+  const [resisted, setResisted] = useState(false);
+  const walkMin = Math.round((kcal / 100) * 20);
+  const fatG = Math.round((kcal / 100) * 11);
+
+  if (resisted) {
+    return (
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+        <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", padding: 24, border: `1px solid ${COLORS.border}`, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🌟</div>
+          <h2 style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, margin: "0 0 6px" }}>Güçlü bir karar</h2>
+          <p style={{ color: COLORS.textSecondary, fontSize: 12, margin: "0 0 18px" }}>+15 XP kazandın. Gerçeği görüp doğru kararı verdin.</p>
+          <button onClick={onClose} style={{ width: "100%", background: COLORS.accent, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Tamam</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+      <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", padding: 24, border: `1px solid ${COLORS.border}`, position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: -44, right: 0, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "6px 10px", cursor: "pointer", color: COLORS.textSecondary }}>✕</button>
+        <h2 style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, textAlign: "center", margin: "0 0 4px" }}>Acı gerçek modu</h2>
+        <p style={{ color: COLORS.textSecondary, fontSize: 11, textAlign: "center", margin: "0 0 18px" }}>Bu, seni suçlamak için değil — net görmen için.</p>
+
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 14, marginBottom: 14 }}>
+          <div style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 6 }}>Kaç kalori?</div>
+          <input type="range" min="50" max="1000" step="10" value={kcal} onChange={(e) => setKcal(parseInt(e.target.value))} style={{ width: "100%" }} />
+          <div style={{ color: COLORS.textPrimary, fontSize: 26, fontWeight: 800, marginTop: 4 }}>{kcal} kcal</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1, background: COLORS.dangerMuted, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 14, textAlign: "center" }}>
+            <div style={{ fontSize: 22 }}>🚶</div>
+            <div style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, marginTop: 4 }}>{walkMin} dk</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 10, marginTop: 2 }}>yürüyüş karşılığı</div>
+          </div>
+          <div style={{ flex: 1, background: COLORS.dangerMuted, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 14, textAlign: "center" }}>
+            <div style={{ fontSize: 22 }}>🧈</div>
+            <div style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fatG} g</div>
+            <div style={{ color: COLORS.textSecondary, fontSize: 10, marginTop: 2 }}>yağ deposu karşılığı</div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: 12, color: COLORS.textSecondary, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Yine de yiyeceğim</button>
+          <button onClick={() => { setResisted(true); onResisted(); }} style={{ flex: 1, background: COLORS.accent, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Vazgeçtim (+15 XP)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CheckInModal({ onClose, onFinish }) {
+  const [step, setStep] = useState(0);
+  const [mood, setMood] = useState(null);
+  const [adherence, setAdherence] = useState(null);
+  const moods = ["😞", "😐", "🙂", "😄"];
+  const options = [
+    { label: "Tamamen uydum", xp: 25 },
+    { label: "Kısmen uydum", xp: 15 },
+    { label: "Zorlandım", xp: 10 },
+  ];
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+      <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", padding: 24, border: `1px solid ${COLORS.border}`, position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: -44, right: 0, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "6px 10px", cursor: "pointer", color: COLORS.textSecondary }}>✕</button>
+
+        {step === 0 && (
+          <React.Fragment>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 800, textAlign: "center", margin: "0 0 18px" }}>Bugün nasıl hissediyorsun?</h2>
+            <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 20 }}>
+              {moods.map((m, i) => (
+                <button key={i} onClick={() => setMood(i)} style={{ width: 50, height: 50, borderRadius: 999, background: mood === i ? COLORS.accentMuted : COLORS.surface, border: `1px solid ${mood === i ? COLORS.accent : COLORS.border}`, fontSize: 22, cursor: "pointer" }}>{m}</button>
+              ))}
+            </div>
+            <button disabled={mood === null} onClick={() => setStep(1)} style={{ width: "100%", background: COLORS.accent, opacity: mood === null ? 0.3 : 1, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Devam</button>
+          </React.Fragment>
+        )}
+
+        {step === 1 && (
+          <React.Fragment>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 800, textAlign: "center", margin: "0 0 18px" }}>Diyetine ne kadar uydun?</h2>
+            {options.map((opt) => (
+              <button key={opt.label} onClick={() => setAdherence(opt)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: adherence?.label === opt.label ? COLORS.accentMuted : COLORS.surface, border: `1px solid ${adherence?.label === opt.label ? COLORS.accent : COLORS.border}`, borderRadius: 12, padding: 12, marginBottom: 8, color: COLORS.textPrimary, fontSize: 13, cursor: "pointer" }}>
+                <span>{opt.label}</span>
+                <span style={{ color: COLORS.accent, fontSize: 11, fontWeight: 700 }}>+{opt.xp} XP</span>
+              </button>
+            ))}
+            <button disabled={adherence === null} onClick={() => setStep(2)} style={{ width: "100%", background: COLORS.accent, opacity: adherence === null ? 0.3 : 1, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, marginTop: 4, cursor: "pointer" }}>Devam</button>
+          </React.Fragment>
+        )}
+
+        {step === 2 && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+            <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 800, margin: "0 0 6px" }}>Check-in tamamlandı</h2>
+            <p style={{ color: COLORS.textSecondary, fontSize: 12, margin: "0 0 18px" }}>+{adherence.xp} XP kazandın. Yarın görüşürüz.</p>
+            <button onClick={() => { onFinish(adherence.xp); onClose(); }} style={{ width: "100%", background: COLORS.accent, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Bitir</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MeasurementModal({ onClose, onSave, lastWeight, profile }) {
+  const [weight, setWeight] = useState(lastWeight || "");
+  const [gender, setGender] = useState(profile.gender);
+  const [height, setHeight] = useState(profile.heightCm);
+  const [neck, setNeck] = useState("");
+  const [waist, setWaist] = useState("");
+  const [hip, setHip] = useState("");
+  const [saved, setSaved] = useState(null);
+
+  const bodyFat = calcBodyFat({ gender, heightCm: height, neckCm: neck, waistCm: waist, hipCm: hip });
+
+  const handleSave = () => {
+    if (!weight) return;
+    const xpGained = bodyFat != null ? 30 : 10;
+    onSave({ weight: parseFloat(weight), bodyFat, gender, heightCm: height, xpGained });
+    setSaved(xpGained);
+  };
+
+  if (saved != null) {
+    return (
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+        <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", padding: 24, border: `1px solid ${COLORS.border}`, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>📏</div>
+          <h2 style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, margin: "0 0 6px" }}>Ölçü kaydedildi</h2>
+          <p style={{ color: COLORS.textSecondary, fontSize: 12, margin: "0 0 18px" }}>
+            {bodyFat != null ? `Tahmini yağ oranın: %${bodyFat}. ` : ""}+{saved} XP kazandın.
+          </p>
+          <button onClick={onClose} style={{ width: "100%", background: COLORS.accent, border: "none", borderRadius: 999, padding: 12, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Tamam</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20 }}>
+      <div style={{ background: COLORS.bg, borderRadius: 24, width: "88%", maxHeight: "85%", overflowY: "auto", padding: 24, border: `1px solid ${COLORS.border}`, position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: -44, right: 0, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "6px 10px", cursor: "pointer", color: COLORS.textSecondary }}>✕</button>
+        <h2 style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: 800, textAlign: "center", margin: "0 0 4px" }}>Ölçü Ekle</h2>
+        <p style={{ color: COLORS.textSecondary, fontSize: 11, textAlign: "center", margin: "0 0 16px" }}>Kilonu gir; yağ oranı için boyun ve bel ölçünü de ekle.</p>
+
+        <label style={fieldLabel}>Kilo (kg) *</label>
+        <input type="number" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} style={inputStyle} placeholder="84.2" />
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={() => setGender("erkek")} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${gender === "erkek" ? COLORS.accent : COLORS.border}`, background: gender === "erkek" ? COLORS.accentMuted : COLORS.surface, color: COLORS.textPrimary, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Erkek</button>
+          <button onClick={() => setGender("kadın")} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${gender === "kadın" ? COLORS.accent : COLORS.border}`, background: gender === "kadın" ? COLORS.accentMuted : COLORS.surface, color: COLORS.textPrimary, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Kadın</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <label style={fieldLabel}>Boy (cm)</label>
+            <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} style={inputStyle} placeholder="178" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={fieldLabel}>Boyun (cm)</label>
+            <input type="number" value={neck} onChange={(e) => setNeck(e.target.value)} style={inputStyle} placeholder="38" />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <label style={fieldLabel}>Bel (cm)</label>
+            <input type="number" value={waist} onChange={(e) => setWaist(e.target.value)} style={inputStyle} placeholder="92" />
+          </div>
+          {gender === "kadın" && (
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabel}>Kalça (cm)</label>
+              <input type="number" value={hip} onChange={(e) => setHip(e.target.value)} style={inputStyle} placeholder="100" />
+            </div>
+          )}
+        </div>
+
+        {bodyFat != null && (
+          <div style={{ marginTop: 16, background: COLORS.accentMuted, border: `1px solid ${COLORS.accent}`, borderRadius: 14, padding: 14, textAlign: "center" }}>
+            <div style={{ color: COLORS.textSecondary, fontSize: 11 }}>Tahmini yağ oranı</div>
+            <div style={{ color: COLORS.accent, fontSize: 26, fontWeight: 800 }}>%{bodyFat}</div>
+          </div>
+        )}
+
+        <button disabled={!weight} onClick={handleSave} style={{ width: "100%", marginTop: 18, background: COLORS.accent, opacity: weight ? 1 : 0.3, border: "none", borderRadius: 999, padding: 13, color: COLORS.bg, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+          Kaydet
+        </button>
+        <p style={{ color: COLORS.textTertiary, fontSize: 9, textAlign: "center", marginTop: 10 }}>
+          Yağ oranı tahmini ABD Donanması formülüyle hesaplanır, kumpas ölçümü kadar hassas değildir.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DietMotivApp() {
+  const [tab, setTab] = useState("home");
+  const [tasks, setTasks] = useState(initialTasks);
+  const [xp, setXp] = useState(340);
+  const [streak, setStreak] = useState(12);
+  const [survivedCravings, setSurvivedCravings] = useState(3);
+  const [modal, setModal] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [measurements, setMeasurements] = useState(initialMeasurements);
+  const [profile, setProfile] = useState({ gender: "erkek", heightCm: 178 });
+  const [coachMessages, setCoachMessages] = useState([
+    { from: "coach", text: "Bugün 12. günündesin, harika gidiyorsun. Bugün seni en çok ne zorluyor?" },
+  ]);
+
+  const levelInfo = getLevelInfo(xp);
+  const prevLevelRef = useRef(levelInfo.level);
+  const currentWeight = measurements[measurements.length - 1].weight;
+  const badges = getBadges({ streak, survivedCravings, level: levelInfo.level, currentWeight });
+  const prevBadgesRef = useRef(badges.filter((b) => b.unlocked).map((b) => b.id));
+
+  const showToast = (t) => {
+    setToast(t);
+    setTimeout(() => setToast(null), 2600);
+  };
+
+  const addXp = (amount) => setXp((x) => x + amount);
+
+  useEffect(() => {
+    if (levelInfo.level > prevLevelRef.current) {
+      showToast({ icon: "🎉", title: `Seviye Atladın! Lv${levelInfo.level}`, sub: "Devam et, harika gidiyorsun" });
+      prevLevelRef.current = levelInfo.level;
+    }
+  }, [levelInfo.level]);
+
+  useEffect(() => {
+    const unlockedNow = badges.filter((b) => b.unlocked).map((b) => b.id);
+    const newOnes = unlockedNow.filter((id) => !prevBadgesRef.current.includes(id));
+    if (newOnes.length > 0) {
+      const b = badges.find((x) => x.id === newOnes[0]);
+      showToast({ icon: b.icon, title: `Rozet Açıldı: ${b.title}`, sub: b.desc });
+    }
+    prevBadgesRef.current = unlockedNow;
+  }, [streak, survivedCravings, levelInfo.level, currentWeight]);
+
+  const toggleTask = (id) => {
+    setTasks((prev) => prev.map((t) => {
+      if (t.id === id && !t.done) {
+        addXp(t.xp);
+        return { ...t, done: true };
+      }
+      return t;
+    }));
+  };
+
+  const handleTalkToCoach = () => {
+    setModal(null);
+    setTab("coach");
+    setCoachMessages((m) => [
+      ...m,
+      { from: "coach", text: "Az önce zor bir an yaşadığını gördüm. Burada yalnız değilsin — şu an ne hissediyorsun, benimle paylaşmak ister misin?" },
+    ]);
+  };
+
+  const handleSaveMeasurement = ({ weight, bodyFat, gender, heightCm, xpGained }) => {
+    const label = `${new Date().getDate()} ${["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"][new Date().getMonth()]}`;
+    setMeasurements((prev) => [...prev, { date: label, weight, bodyFat }]);
+    setProfile({ gender, heightCm });
+    addXp(xpGained);
+    const task2 = tasks.find((t) => t.id === 2);
+    if (task2 && !task2.done) {
+      setTasks((prev) => prev.map((t) => (t.id === 2 ? { ...t, done: true } : t)));
+      addXp(task2.xp);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+      <PhoneFrame>
+        <StatusBar />
+        <div style={{ height: "calc(100% - 30px)", position: "relative" }}>
+          {tab === "home" && (
+            <HomeScreen
+              streak={streak} levelInfo={levelInfo} tasks={tasks} toggleTask={toggleTask}
+              onEmergency={() => setModal("emergency")} onCheckIn={() => setModal("checkin")}
+              onProgress={() => setTab("progress")} onOpenMeasurement={() => setModal("measurement")}
+            />
+          )}
+          {tab === "progress" && (
+            <ProgressScreen onBack={() => setTab("home")} streak={streak} badges={badges} measurements={measurements} onOpenMeasurement={() => setModal("measurement")} />
+          )}
+          {tab === "coach" && <CoachScreen messages={coachMessages} setMessages={setCoachMessages} />}
+
+          <TabBar active={tab} onChange={setTab} />
+          <Toast toast={toast} />
+
+          {modal === "emergency" && (
+            <EmergencyModal onClose={() => setModal(null)} onTruth={() => setModal("truth")} onSurvive={() => { addXp(30); setSurvivedCravings((c) => c + 1); }} onTalkToCoach={handleTalkToCoach} />
+          )}
+          {modal === "truth" && <TruthModal onClose={() => setModal(null)} onResisted={() => addXp(15)} />}
+          {modal === "checkin" && <CheckInModal onClose={() => setModal(null)} onFinish={(amount) => addXp(amount)} />}
+          {modal === "measurement" && (
+            <MeasurementModal onClose={() => setModal(null)} onSave={handleSaveMeasurement} lastWeight={currentWeight} profile={profile} />
+          )}
+        </div>
+      </PhoneFrame>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<DietMotivApp />);
+</script>
+</body>
+</html>
