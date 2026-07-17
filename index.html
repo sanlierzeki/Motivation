@@ -9,16 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: #050506;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
+  body { margin: 0; background: #050506; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 </style>
 </head>
 <body>
@@ -194,10 +185,10 @@ function TabBar({ active, onChange }) {
   const tabs = [
     { id: "home", label: "Bugün", icon: "🏠" },
     { id: "progress", label: "İlerleme", icon: "📊" },
-    { id: "coach", label: "Koç", icon: "💬" },
+    { id: "future", label: "Gelecek Ben", icon: "🔮" },
   ];
   return (
-    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", background: COLORS.surface, borderTop: `1px solid ${COLORS.border}`, paddingBottom: 10, paddingTop: 8 }}>
+    <div style={{ flexShrink: 0, display: "flex", background: COLORS.surface, borderTop: `1px solid ${COLORS.border}`, paddingBottom: 10, paddingTop: 8 }}>
       {tabs.map((t) => {
         const isActive = active === t.id;
         return (
@@ -227,7 +218,7 @@ function Toast({ toast }) {
 function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheckIn, onProgress, onOpenMeasurement }) {
   const kgLeft = 84.2 - 75;
   return (
-    <div style={{ padding: "6px 16px 90px", overflowY: "auto", height: "100%" }}>
+    <div style={{ padding: "6px 16px 16px", overflowY: "auto", height: "100%" }}>
       <h1 style={{ color: COLORS.textPrimary, fontSize: 26, fontWeight: 800, margin: "6px 0 14px" }}>Bugün</h1>
       <StatusHeader streak={streak} levelInfo={levelInfo} />
 
@@ -266,9 +257,11 @@ function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheck
         <div style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 2 }}>30 saniyeni ayır, +25 XP kazan</div>
       </button>
 
-      <button onClick={onEmergency} style={{ position: "fixed", bottom: 76, left: "50%", transform: "translateX(-50%)", background: COLORS.danger, border: "none", borderRadius: 999, padding: "12px 22px", color: "#1A0000", fontWeight: 800, fontSize: 12, lineHeight: 1.2, textAlign: "center", cursor: "pointer", boxShadow: "0 8px 20px rgba(255,92,92,0.35)", whiteSpace: "pre" }}>
-        {"Canım çok\nçekiyor"}
-      </button>
+      <div style={{ position: "sticky", bottom: 8, display: "flex", justifyContent: "center", zIndex: 5 }}>
+        <button onClick={onEmergency} style={{ background: COLORS.danger, border: "none", borderRadius: 999, padding: "12px 22px", color: "#1A0000", fontWeight: 800, fontSize: 12, lineHeight: 1.2, textAlign: "center", cursor: "pointer", boxShadow: "0 8px 20px rgba(255,92,92,0.45)", whiteSpace: "pre" }}>
+          {"Canım çok\nçekiyor"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -277,7 +270,7 @@ function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasuremen
   const latest = measurements[measurements.length - 1];
   const hasFatData = measurements.some((m) => m.bodyFat != null);
   return (
-    <div style={{ padding: "6px 16px 90px", overflowY: "auto", height: "100%" }}>
+    <div style={{ padding: "6px 16px 16px", overflowY: "auto", height: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 14px" }}>
         <button onClick={onBack} style={{ background: "transparent", border: "none", color: COLORS.textSecondary, cursor: "pointer", fontSize: 18 }}>‹</button>
         <h1 style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 800, margin: 0, flex: 1 }}>İlerleme</h1>
@@ -334,40 +327,75 @@ function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasuremen
   );
 }
 
-function CoachScreen({ messages, setMessages }) {
-  const [input, setInput] = useState("");
-  const scrollRef = useRef(null);
+function FutureMeScreen({ messages, onAdd }) {
+  const [text, setText] = useState("");
+  const [tag, setTag] = useState("zor");
+  const tagOptions = [
+    { id: "zor", label: "Zor anda", icon: "🆘" },
+    { id: "yarin", label: "Yarın", icon: "🌅" },
+    { id: "hedef", label: "Hedefe ulaşınca", icon: "🏁" },
+  ];
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  const send = () => {
-    if (!input.trim()) return;
-    setMessages((m) => [
-      ...m,
-      { from: "user", text: input },
-      { from: "coach", text: "Bunu paylaştığın için teşekkürler. Geçmişte de benzer anları atlattın — bu sefer de yapabilirsin. Küçük bir adım: bir bardak su iç ve 5 dakika bekle." },
-    ]);
-    setInput("");
+  const handleSave = () => {
+    if (!text.trim()) return;
+    onAdd({ text: text.trim(), tag });
+    setText("");
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "6px 16px 8px" }}>
-        <h1 style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 800, margin: "6px 0" }}>Koçun</h1>
+    <div style={{ padding: "6px 16px 16px", overflowY: "auto", height: "100%" }}>
+      <h1 style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: 800, margin: "6px 0 4px" }}>Gelecekteki Ben</h1>
+      <p style={{ color: COLORS.textSecondary, fontSize: 12, margin: "0 0 16px" }}>Zor anlarda okuman için kendine bir mesaj bırak. Bu senin kendi sözlerin — en güçlü motivasyon kaynağı.</p>
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Örn: Bunu neden başlattığını unutma..."
+          style={{ width: "100%", minHeight: 70, background: "transparent", border: "none", color: COLORS.textPrimary, fontSize: 13, outline: "none", resize: "none", fontFamily: "inherit" }}
+        />
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {tagOptions.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setTag(opt.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                background: tag === opt.id ? COLORS.accentMuted : "transparent",
+                border: `1px solid ${tag === opt.id ? COLORS.accent : COLORS.border}`,
+                borderRadius: 999, padding: "5px 10px", fontSize: 11,
+                color: tag === opt.id ? COLORS.accent : COLORS.textSecondary, cursor: "pointer",
+              }}
+            >
+              <span>{opt.icon}</span>{opt.label}
+            </button>
+          ))}
+        </div>
+        <button
+          disabled={!text.trim()}
+          onClick={handleSave}
+          style={{ width: "100%", marginTop: 12, background: COLORS.accent, opacity: text.trim() ? 1 : 0.3, border: "none", borderRadius: 999, padding: 11, color: COLORS.bg, fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+        >
+          Kaydet (+10 XP)
+        </button>
       </div>
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "0 16px" }}>
-        {messages.map((m, i) => (
-          <div key={i} style={{ maxWidth: "78%", marginLeft: m.from === "user" ? "auto" : 0, background: m.from === "user" ? COLORS.accentMuted : COLORS.surface, border: m.from === "coach" ? `1px solid ${COLORS.border}` : "none", borderRadius: 14, padding: 12, marginBottom: 8 }}>
+
+      <h2 style={{ color: COLORS.textPrimary, fontSize: 15, fontWeight: 700, margin: "22px 0 10px" }}>Mesajların</h2>
+      {messages.length === 0 && (
+        <p style={{ color: COLORS.textTertiary, fontSize: 12, textAlign: "center", marginTop: 20 }}>Henüz mesajın yok. İlkini yukarıdan yaz.</p>
+      )}
+      {[...messages].reverse().map((m) => {
+        const opt = tagOptions.find((o) => o.id === m.tag);
+        return (
+          <div key={m.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12, marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ color: COLORS.accent, fontSize: 10, fontWeight: 700 }}>{opt.icon} {opt.label}</span>
+              <span style={{ color: COLORS.textTertiary, fontSize: 10 }}>{m.date}</span>
+            </div>
             <span style={{ color: COLORS.textPrimary, fontSize: 13, lineHeight: 1.4 }}>{m.text}</span>
           </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${COLORS.border}`, marginBottom: 60 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Bir şeyler yaz..." style={{ flex: 1, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: "8px 14px", color: COLORS.textPrimary, fontSize: 13, outline: "none" }} />
-        <button onClick={send} style={{ background: COLORS.accent, border: "none", borderRadius: 999, padding: "8px 16px", color: COLORS.bg, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Gönder</button>
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -390,7 +418,7 @@ const optionSub = { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 };
 const inputStyle = { width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 12px", color: COLORS.textPrimary, fontSize: 14, outline: "none", marginTop: 4 };
 const fieldLabel = { color: COLORS.textSecondary, fontSize: 11, marginTop: 10, display: "block" };
 
-function EmergencyModal({ onClose, onTruth, onSurvive, onTalkToCoach }) {
+function EmergencyModal({ onClose, onTruth, onSurvive, onReadFutureMessage }) {
   const [mode, setMode] = useState("choice");
   const [secondsLeft, setSecondsLeft] = useState(120);
 
@@ -421,9 +449,9 @@ function EmergencyModal({ onClose, onTruth, onSurvive, onTalkToCoach }) {
               <div style={optionTitle}>Acı gerçeği gör</div>
               <div style={optionSub}>Bu atıştırmanın karşılığı ne, hesapla</div>
             </button>
-            <button onClick={onTalkToCoach} style={optionStyle}>
-              <div style={optionTitle}>Koçumla konuş</div>
-              <div style={optionSub}>Anlık, bu ana özel bir destek mesajı al</div>
+            <button onClick={onReadFutureMessage} style={optionStyle}>
+              <div style={optionTitle}>Gelecekteki benimden oku</div>
+              <div style={optionSub}>Bu an için kendine yazdığın mesajı gör</div>
             </button>
           </React.Fragment>
         )}
@@ -660,8 +688,8 @@ function DietMotivApp() {
   const [toast, setToast] = useState(null);
   const [measurements, setMeasurements] = useState(initialMeasurements);
   const [profile, setProfile] = useState({ gender: "erkek", heightCm: 178 });
-  const [coachMessages, setCoachMessages] = useState([
-    { from: "coach", text: "Bugün 12. günündesin, harika gidiyorsun. Bugün seni en çok ne zorluyor?" },
+  const [futureMessages, setFutureMessages] = useState([
+    { id: 1, text: "Bunu neden başlattığını unutma: kendini yeniden güçlü hissetmek istiyordun. Şu an o hedefe her zamankinden yakınsın.", tag: "zor", date: "10 Tem" },
   ]);
 
   const levelInfo = getLevelInfo(xp);
@@ -704,13 +732,23 @@ function DietMotivApp() {
     }));
   };
 
-  const handleTalkToCoach = () => {
+  const handleReadFutureMessage = () => {
     setModal(null);
-    setTab("coach");
-    setCoachMessages((m) => [
-      ...m,
-      { from: "coach", text: "Az önce zor bir an yaşadığını gördüm. Burada yalnız değilsin — şu an ne hissediyorsun, benimle paylaşmak ister misin?" },
-    ]);
+    setTab("future");
+    const zorMessages = futureMessages.filter((m) => m.tag === "zor");
+    if (zorMessages.length > 0) {
+      const msg = zorMessages[Math.floor(Math.random() * zorMessages.length)];
+      const preview = msg.text.length > 70 ? msg.text.slice(0, 70) + "…" : msg.text;
+      showToast({ icon: "🔮", title: "Gelecekteki benin diyor ki:", sub: preview });
+    } else {
+      showToast({ icon: "✍️", title: "Henüz mesajın yok", sub: "Zor anlar için kendine bir tane yaz" });
+    }
+  };
+
+  const handleAddFutureMessage = ({ text, tag }) => {
+    const label = `${new Date().getDate()} ${["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"][new Date().getMonth()]}`;
+    setFutureMessages((prev) => [...prev, { id: Date.now(), text, tag, date: label }]);
+    addXp(10);
   };
 
   const handleSaveMeasurement = ({ weight, bodyFat, gender, heightCm, xpGained }) => {
@@ -728,25 +766,29 @@ function DietMotivApp() {
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
       <PhoneFrame>
-        <StatusBar />
-        <div style={{ height: "calc(100% - 30px)", position: "relative" }}>
-          {tab === "home" && (
-            <HomeScreen
-              streak={streak} levelInfo={levelInfo} tasks={tasks} toggleTask={toggleTask}
-              onEmergency={() => setModal("emergency")} onCheckIn={() => setModal("checkin")}
-              onProgress={() => setTab("progress")} onOpenMeasurement={() => setModal("measurement")}
-            />
-          )}
-          {tab === "progress" && (
-            <ProgressScreen onBack={() => setTab("home")} streak={streak} badges={badges} measurements={measurements} onOpenMeasurement={() => setModal("measurement")} />
-          )}
-          {tab === "coach" && <CoachScreen messages={coachMessages} setMessages={setCoachMessages} />}
+        <div style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
+          <div style={{ flexShrink: 0 }}>
+            <StatusBar />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            {tab === "home" && (
+              <HomeScreen
+                streak={streak} levelInfo={levelInfo} tasks={tasks} toggleTask={toggleTask}
+                onEmergency={() => setModal("emergency")} onCheckIn={() => setModal("checkin")}
+                onProgress={() => setTab("progress")} onOpenMeasurement={() => setModal("measurement")}
+              />
+            )}
+            {tab === "progress" && (
+              <ProgressScreen onBack={() => setTab("home")} streak={streak} badges={badges} measurements={measurements} onOpenMeasurement={() => setModal("measurement")} />
+            )}
+            {tab === "future" && <FutureMeScreen messages={futureMessages} onAdd={handleAddFutureMessage} />}
+          </div>
 
           <TabBar active={tab} onChange={setTab} />
           <Toast toast={toast} />
 
           {modal === "emergency" && (
-            <EmergencyModal onClose={() => setModal(null)} onTruth={() => setModal("truth")} onSurvive={() => { addXp(30); setSurvivedCravings((c) => c + 1); }} onTalkToCoach={handleTalkToCoach} />
+            <EmergencyModal onClose={() => setModal(null)} onTruth={() => setModal("truth")} onSurvive={() => { addXp(30); setSurvivedCravings((c) => c + 1); }} onReadFutureMessage={handleReadFutureMessage} />
           )}
           {modal === "truth" && <TruthModal onClose={() => setModal(null)} onResisted={() => addXp(15)} />}
           {modal === "checkin" && <CheckInModal onClose={() => setModal(null)} onFinish={(amount) => addXp(amount)} />}
@@ -764,3 +806,16 @@ ReactDOM.createRoot(document.getElementById("root")).render(<DietMotivApp />);
 </script>
 </body>
 </html>
+
+ProductCode	Image1
+221200	swm2.png
+234100	swm2.png
+243110	swm2.png
+243610	swm2.png
+254900	swm2.png
+255500	swm2.png
+256010	swm2.png
+264500	swm2.png
+265200	swm2.png
+265600	swm2.png
+280900	swm2.png
