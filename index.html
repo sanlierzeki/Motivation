@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #050506; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { margin: 0; background: #050506; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 </style>
 </head>
 <body>
@@ -43,11 +43,12 @@ const START_WEIGHT = 92;
 const TARGET_WEIGHT = 75;
 
 const initialTasks = [
-  { id: 1, title: "10.000 adım tamamla", xp: 20, done: false, icon: "🚶" },
-  { id: 2, title: "Bugünkü kilonu gir", xp: 10, done: false, icon: "📈" },
-  { id: 3, title: "2L su iç", xp: 15, done: true, icon: "💧" },
-  { id: 4, title: "Akşam check-in yap", xp: 25, done: false, icon: "✅" },
+  { id: 1, title: "10.000 adım tamamla", xp: 20, done: false, icon: "🚶", streak: 5, history: [true, true, false, true, true, true, true] },
+  { id: 2, title: "Bugünkü kilonu gir", xp: 10, done: false, icon: "📈", streak: 2, history: [false, false, false, true, false, true, true] },
+  { id: 3, title: "2L su iç", xp: 15, done: true, icon: "💧", streak: 8, history: [true, true, true, true, true, true, true] },
+  { id: 4, title: "Akşam check-in yap", xp: 25, done: false, icon: "✅", streak: 12, history: [true, true, true, true, true, true, true] },
 ];
+const HABIT_ICONS = ["⭐", "🥗", "🧘", "😴", "🚭", "🏋️", "☕", "🧴", "📵", "🍎"];
 
 // --- ABD Donanması yağ oranı formülü (kumpas gerektirmez) ---
 function calcBodyFat({ gender, heightCm, neckCm, waistCm, hipCm }) {
@@ -118,6 +119,17 @@ function MiniLineChart({ data, height = 70, showAxis = false, dataKey = "weight"
         return <text key={i} x={x} y={h + 14} fontSize="9" fill={COLORS.textTertiary} textAnchor="middle">{d.date}</text>;
       })}
     </svg>
+  );
+}
+
+function HabitDots({ history, doneToday }) {
+  const days = [...history, doneToday];
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {days.map((filled, i) => (
+        <div key={i} style={{ width: 12, height: 12, borderRadius: 4, background: filled ? COLORS.accent : COLORS.surface, border: `1px solid ${filled ? COLORS.accent : COLORS.border}` }} />
+      ))}
+    </div>
   );
 }
 
@@ -215,7 +227,41 @@ function Toast({ toast }) {
   );
 }
 
-function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheckIn, onProgress, onOpenMeasurement }) {
+function AddHabitForm({ onAdd, onCancel }) {
+  const [title, setTitle] = useState("");
+  const [icon, setIcon] = useState(HABIT_ICONS[0]);
+
+  const handleAdd = () => {
+    if (!title.trim()) return;
+    onAdd({ title: title.trim(), icon, xp: 15 });
+    setTitle("");
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12, marginBottom: 8 }}>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Yeni alışkanlık adı..."
+        style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${COLORS.border}`, color: COLORS.textPrimary, fontSize: 13, padding: "4px 0 8px", outline: "none" }}
+      />
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {HABIT_ICONS.map((ic) => (
+          <button key={ic} onClick={() => setIcon(ic)} style={{ width: 30, height: 30, borderRadius: 8, background: icon === ic ? COLORS.accentMuted : "transparent", border: `1px solid ${icon === ic ? COLORS.accent : COLORS.border}`, fontSize: 14, cursor: "pointer" }}>
+            {ic}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: 9, color: COLORS.textSecondary, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Vazgeç</button>
+        <button disabled={!title.trim()} onClick={handleAdd} style={{ flex: 1, background: COLORS.accent, opacity: title.trim() ? 1 : 0.3, border: "none", borderRadius: 999, padding: 9, color: COLORS.bg, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Ekle</button>
+      </div>
+    </div>
+  );
+}
+
+function HomeScreen({ streak, levelInfo, tasks, toggleTask, onDeleteTask, onAddTask, onEmergency, onCheckIn, onProgress, onOpenMeasurement }) {
+  const [adding, setAdding] = useState(false);
   const kgLeft = 84.2 - 75;
   return (
     <div style={{ padding: "6px 16px 16px", overflowY: "auto", height: "100%" }}>
@@ -236,21 +282,39 @@ function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheck
         <div style={{ color: COLORS.accent, fontSize: 12, fontWeight: 700, marginTop: 6 }}>Detayları gör →</div>
       </button>
 
-      <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Bugünün görevleri</h2>
-      {tasks.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => (t.id === 2 && !t.done ? onOpenMeasurement() : toggleTask(t.id))}
-          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12, marginBottom: 8, opacity: t.done ? 0.5 : 1, cursor: "pointer", textAlign: "left" }}
-        >
-          <div style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${t.done ? COLORS.accent : COLORS.textTertiary}`, background: t.done ? COLORS.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {t.done && <span style={{ color: COLORS.bg, fontWeight: 900, fontSize: 13 }}>✓</span>}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "22px 0 10px" }}>
+        <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: 0 }}>Bugünün görevleri</h2>
+        {!adding && (
+          <button onClick={() => setAdding(true)} style={{ background: COLORS.accentMuted, border: `1px solid ${COLORS.accent}`, borderRadius: 999, padding: "4px 10px", color: COLORS.accent, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Ekle</button>
+        )}
+      </div>
+
+      {adding && <AddHabitForm onAdd={(h) => { onAddTask(h); setAdding(false); }} onCancel={() => setAdding(false)} />}
+
+      {tasks.length === 0 && !adding && (
+        <p style={{ color: COLORS.textTertiary, fontSize: 12, textAlign: "center", marginTop: 12 }}>Henüz alışkanlığın yok, yukarıdan ekle.</p>
+      )}
+
+      {tasks.map((t) => {
+        const effStreak = t.done ? t.streak + 1 : t.streak;
+        return (
+          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12, marginBottom: 8, opacity: t.done ? 0.6 : 1 }}>
+            <button
+              onClick={() => (t.id === 2 && !t.done ? onOpenMeasurement() : toggleTask(t.id))}
+              style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
+            >
+              <div style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${t.done ? COLORS.accent : COLORS.textTertiary}`, background: t.done ? COLORS.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {t.done && <span style={{ color: COLORS.bg, fontWeight: 900, fontSize: 13 }}>✓</span>}
+              </div>
+              <span style={{ fontSize: 15 }}>{t.icon}</span>
+              <span style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</span>
+              {effStreak > 0 && <span style={{ color: COLORS.textTertiary, fontSize: 10 }}>🔥{effStreak}</span>}
+              <span style={{ color: COLORS.accent, fontSize: 11, fontWeight: 700 }}>+{t.xp}</span>
+            </button>
+            <button onClick={() => onDeleteTask(t.id)} style={{ background: "transparent", border: "none", color: COLORS.textTertiary, fontSize: 14, cursor: "pointer", padding: 4 }}>✕</button>
           </div>
-          <span style={{ fontSize: 15 }}>{t.icon}</span>
-          <span style={{ color: COLORS.textPrimary, fontSize: 13, flex: 1, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</span>
-          <span style={{ color: COLORS.accent, fontSize: 11, fontWeight: 700 }}>+{t.xp}</span>
-        </button>
-      ))}
+        );
+      })}
 
       <button onClick={onCheckIn} style={{ width: "100%", textAlign: "left", marginTop: 8, background: COLORS.accentMuted, borderRadius: 16, padding: 16, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
         <div style={{ color: COLORS.textPrimary, fontSize: 14, fontWeight: 700 }}>Günlük check-in</div>
@@ -266,7 +330,7 @@ function HomeScreen({ streak, levelInfo, tasks, toggleTask, onEmergency, onCheck
   );
 }
 
-function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasurement }) {
+function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasurement, tasks }) {
   const latest = measurements[measurements.length - 1];
   const hasFatData = measurements.some((m) => m.bodyFat != null);
   return (
@@ -305,6 +369,41 @@ function ProgressScreen({ onBack, streak, badges, measurements, onOpenMeasuremen
       <div style={{ marginTop: 20 }}>
         <div style={{ color: COLORS.textPrimary, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Son 14 gün</div>
         <StreakCalendar streak={streak} />
+      </div>
+
+      <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Alışkanlık Serileri</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {tasks.map((t) => {
+          const effStreak = t.done ? t.streak + 1 : t.streak;
+          return (
+            <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>{t.icon}</span>
+                  <span style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: 700 }}>{t.title}</span>
+                </div>
+                <span style={{ color: COLORS.accent, fontSize: 12, fontWeight: 800 }}>🔥{effStreak}</span>
+              </div>
+              <HabitDots history={t.history} doneToday={t.done} />
+            </div>
+          );
+        })}
+        {tasks.length === 0 && <p style={{ color: COLORS.textTertiary, fontSize: 12, textAlign: "center" }}>Henüz bir alışkanlığın yok.</p>}
+      </div>
+
+      <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Ölçüm Geçmişi</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {[...measurements].reverse().map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: "10px 14px" }}>
+            <span style={{ color: COLORS.textSecondary, fontSize: 11 }}>{m.date}</span>
+            <div style={{ display: "flex", gap: 14 }}>
+              <span style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: 700 }}>{m.weight} kg</span>
+              <span style={{ color: m.bodyFat != null ? COLORS.gold : COLORS.textTertiary, fontSize: 12, fontWeight: 700 }}>
+                {m.bodyFat != null ? `%${m.bodyFat}` : "—"}
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
 
       <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 700, margin: "22px 0 10px" }}>Rozetler</h2>
@@ -732,6 +831,14 @@ function DietMotivApp() {
     }));
   };
 
+  const deleteTask = (id) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const addTask = ({ title, icon, xp }) => {
+    setTasks((prev) => [...prev, { id: Date.now(), title, icon, xp, done: false, streak: 0, history: [false, false, false, false, false, false, false] }]);
+  };
+
   const handleReadFutureMessage = () => {
     setModal(null);
     setTab("future");
@@ -764,7 +871,7 @@ function DietMotivApp() {
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", width: "100%", minHeight: "100vh", boxSizing: "border-box", padding: "16px 0" }}>
       <PhoneFrame>
         <div style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
           <div style={{ flexShrink: 0 }}>
@@ -774,12 +881,13 @@ function DietMotivApp() {
             {tab === "home" && (
               <HomeScreen
                 streak={streak} levelInfo={levelInfo} tasks={tasks} toggleTask={toggleTask}
+                onDeleteTask={deleteTask} onAddTask={addTask}
                 onEmergency={() => setModal("emergency")} onCheckIn={() => setModal("checkin")}
                 onProgress={() => setTab("progress")} onOpenMeasurement={() => setModal("measurement")}
               />
             )}
             {tab === "progress" && (
-              <ProgressScreen onBack={() => setTab("home")} streak={streak} badges={badges} measurements={measurements} onOpenMeasurement={() => setModal("measurement")} />
+              <ProgressScreen onBack={() => setTab("home")} streak={streak} badges={badges} measurements={measurements} onOpenMeasurement={() => setModal("measurement")} tasks={tasks} />
             )}
             {tab === "future" && <FutureMeScreen messages={futureMessages} onAdd={handleAddFutureMessage} />}
           </div>
@@ -806,16 +914,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(<DietMotivApp />);
 </script>
 </body>
 </html>
-
-ProductCode	Image1
-221200	swm2.png
-234100	swm2.png
-243110	swm2.png
-243610	swm2.png
-254900	swm2.png
-255500	swm2.png
-256010	swm2.png
-264500	swm2.png
-265200	swm2.png
-265600	swm2.png
-280900	swm2.png
